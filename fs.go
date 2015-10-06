@@ -98,6 +98,8 @@ func FileHandler(pathRoot, filePathRoot string) Handler {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if len(r.URL.Path) >= len(pathRoot) && r.URL.Path[:len(pathRoot)] == pathRoot {
 			HandleFile(w, r, filepath.Join(filePathRoot, r.URL.Path[len(pathRoot):]))
+		}else{
+			http.NotFound(w, r)
 		}
 	}
 }
