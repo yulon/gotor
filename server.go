@@ -14,7 +14,7 @@ func (s *slh) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.h(w, r)
 }
 
-func StandLibHandler(h Handler) (http.Handler) {
+func StdLibHandler(h Handler) (http.Handler) {
 	return &slh{h}
 }
 
