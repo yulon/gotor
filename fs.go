@@ -22,6 +22,10 @@ var PreGzipFileMimes = map[string]bool{
 }
 
 func HandleFile(w http.ResponseWriter, r *http.Request, fileName string) {
+	if fileName == "" || fileName == "" {
+		http.NotFound(w, r)
+	}
+
 	f, err := os.Open(fileName)
 	if err != nil {
 		http.NotFound(w, r)
