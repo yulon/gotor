@@ -25,7 +25,7 @@ func PathRouter(m Route) Handler {
 				}
 			}
 		}
-		http.NotFound(w, r)
+		NotFound(w, r)
 	}
 }
 
@@ -40,7 +40,7 @@ func matchRoute(w http.ResponseWriter, r *http.Request, m Route, key string) {
 		h(w, r)
 		return
 	}
-	http.NotFound(w, r)
+	NotFound(w, r)
 }
 
 func MethodRouter(m Route) Handler {

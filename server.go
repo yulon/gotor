@@ -31,3 +31,5 @@ func New(addr string, h Handler) {
 func NewTLS(addr string, certFile string, keyFile string, h Handler) {
 	http.ListenAndServeTLS(addr, certFile, keyFile, StdLibHandlerHaveScheme(h, "https"))
 }
+
+var NotFound Handler = http.NotFound
