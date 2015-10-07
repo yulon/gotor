@@ -6,8 +6,6 @@ import (
 
 type Handler func(http.ResponseWriter, *http.Request)
 
-type HandlerMap map[string]Handler
-
 type slh struct{
 	h Handler
 }

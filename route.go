@@ -4,7 +4,9 @@ import (
 	"net/http"
 )
 
-func PathRouter(m HandlerMap) Handler {
+type Route map[string]Handler
+
+func PathRouter(m Route) Handler {
 	return func(w http.ResponseWriter, r *http.Request) {
 		h, ok := m[r.URL.Path]
 		if ok {
@@ -15,6 +17,10 @@ func PathRouter(m HandlerMap) Handler {
 			if r.URL.Path[i] == '/' {
 				h, ok = m[r.URL.Path[:i]]
 				if ok {
+					if r.URL.RawQuery == "" {
+						r.URL.RawQuery += "&"
+					}
+					r.URL.RawQuery += ":*=" + r.URL.Path[i:]
 					h(w, r)
 					return
 				}
@@ -24,7 +30,7 @@ func PathRouter(m HandlerMap) Handler {
 	}
 }
 
-func MethodRouter(m HandlerMap) Handler {
+func MethodRouter(m Route) Handler {
 	return func(w http.ResponseWriter, r *http.Request) {
 		h, ok := m[r.Method]
 		if ok {
@@ -40,7 +46,7 @@ func MethodRouter(m HandlerMap) Handler {
 	}
 }
 
-func HostRouter(m HandlerMap) Handler {
+func HostRouter(m Route) Handler {
 	return func(w http.ResponseWriter, r *http.Request) {
 		h, ok := m[r.Host]
 		if !ok {
