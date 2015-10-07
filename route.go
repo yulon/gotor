@@ -17,10 +17,9 @@ func PathRouter(m Route) Handler {
 			if r.URL.Path[i] == '/' {
 				h, ok = m[r.URL.Path[:i]]
 				if ok {
-					if r.URL.RawQuery == "" {
-						r.URL.RawQuery += "&"
-					}
-					r.URL.RawQuery += "@rest=" + r.URL.Path[i:]
+					q := r.URL.Query()
+					q.Set("@rest", r.URL.Path[i:])
+					r.URL.RawQuery = q.Encode()
 					h(w, r)
 					return
 				}
