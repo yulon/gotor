@@ -20,7 +20,7 @@ func PathRouter(m Route) Handler {
 					if r.URL.RawQuery == "" {
 						r.URL.RawQuery += "&"
 					}
-					r.URL.RawQuery += ":*=" + r.URL.Path[i:]
+					r.URL.RawQuery += "@rest=" + r.URL.Path[i:]
 					h(w, r)
 					return
 				}
