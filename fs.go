@@ -90,7 +90,7 @@ func HandleFile(w http.ResponseWriter, r *http.Request, fileName string) {
 		}
 	}
 
-	w.Header().Set("Content-Length", strconv.Itoa(int(fi.Size())))
+	w.Header().Set("Content-Length", strconv.FormatInt(fi.Size(), 10))
 	w.WriteHeader(http.StatusOK)
 	w.Write(bin[:count])
 	if err != io.EOF {
