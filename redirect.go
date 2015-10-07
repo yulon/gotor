@@ -15,17 +15,8 @@ func RedirectHandler(url string, code int) Handler {
 	}
 }
 
-func RedirectHostHandler(host string, code int) Handler {
+func RedirectSiteHandler(site string, code int) Handler {
 	return func(w http.ResponseWriter, r *http.Request) {
-		r.URL.Host = host
-		Redirect(w, r, r.URL.String(), code)
-	}
-}
-
-func RedirectHostRootHandler(host string, code int) Handler {
-	return func(w http.ResponseWriter, r *http.Request) {
-		r.URL.Host = host
-		r.URL.Path = r.URL.Query().Get("@rest")
-		Redirect(w, r, r.URL.String(), code)
+		Redirect(w, r, site + r.RequestURI, code)
 	}
 }
