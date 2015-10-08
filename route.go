@@ -2,6 +2,7 @@ package hs
 
 import (
 	"net/http"
+	"strings"
 )
 
 type Route map[string]Handler
@@ -35,7 +36,7 @@ func matchRoute(w http.ResponseWriter, r *http.Request, m Route, key string) {
 		h(w, r)
 		return
 	}
-	h, ok = m[""]
+	h, ok = m["*"]
 	if ok {
 		h(w, r)
 		return
@@ -52,5 +53,24 @@ func MethodRouter(m Route) Handler {
 func HostRouter(m Route) Handler {
 	return func(w http.ResponseWriter, r *http.Request) {
 		matchRoute(w, r, m, r.Host)
+	}
+}
+
+func DeviceRouter(m Route) Handler {
+	dh, ok := m["*"]
+	if ok {
+		delete(m, "*")
+	}else{
+		dh = NotFound
+	}
+	return func(w http.ResponseWriter, r *http.Request) {
+		ua := r.UserAgent()
+		for k, h := range m {
+			if strings.Index(ua, k) != -1 {
+				h(w, r)
+				return
+			}
+		}
+		dh(w, r)
 	}
 }
