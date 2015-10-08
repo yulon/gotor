@@ -16,10 +16,10 @@ func PathRouter(m Route) Handler {
 		}
 		for i := len(r.URL.Path) - 1; i > 0; i-- {
 			if r.URL.Path[i] == '/' {
-				h, ok = m[r.URL.Path[:i]]
+				h, ok = m[r.URL.Path[:i] + "*"]
 				if ok {
 					q := r.URL.Query()
-					q.Set("@rest", r.URL.Path[i:])
+					q.Set("*", r.URL.Path[i:])
 					r.URL.RawQuery = q.Encode()
 					h(w, r)
 					return

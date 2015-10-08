@@ -100,6 +100,6 @@ func HandleFile(w http.ResponseWriter, r *http.Request, fileName string) {
 
 func FileHandler(root string) Handler {
 	return func(w http.ResponseWriter, r *http.Request) {
-		HandleFile(w, r, filepath.Join(root, r.URL.Query().Get("@rest")))
+		HandleFile(w, r, filepath.Join(root, r.URL.Query().Get("*")))
 	}
 }
