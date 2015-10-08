@@ -56,7 +56,7 @@ func HostRouter(m Route) Handler {
 	}
 }
 
-func DeviceRouter(m Route) Handler {
+func UserAgentRouter(m Route) Handler {
 	dh, ok := m["*"]
 	if ok {
 		delete(m, "*")
