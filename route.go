@@ -14,9 +14,9 @@ func PathRouter(m Route) Handler {
 			h(w, r)
 			return
 		}
-		for i := len(r.URL.Path) - 1; i > 0; i-- {
+		for i := len(r.URL.Path) - 1; i >= 0; i-- {
 			if r.URL.Path[i] == '/' {
-				h, ok = m[r.URL.Path[:i] + "*"]
+				h, ok = m[r.URL.Path[:i + 1] + "*"]
 				if ok {
 					q := r.URL.Query()
 					q.Set("*", r.URL.Path[i:])
