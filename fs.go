@@ -13,15 +13,24 @@ import (
 	"mime"
 )
 
-var PreGzipFileMimes = map[string]bool{
-	"text/html": true,
-	"text/css": true,
-	"text/plain": true,
-	"application/javascript": true,
-	"image/bmp": true,
+type FileService struct{
+	CacheAge int64
+	Encodings map[string]string
 }
 
-func HandleFile(w http.ResponseWriter, r *http.Request, fileName string) {
+var DefaultEncodings = map[string]string{
+	"text/html": "gzip",
+	"text/css": "gzip",
+	"text/plain": "gzip",
+	"application/javascript": "gzip",
+	"image/bmp": "gzip",
+}
+
+var encoder = map[string]func(io.Writer)io.WriteCloser{
+	"gzip": func(w io.Writer)io.WriteCloser{return gzip.NewWriter(w)},
+}
+
+func (fs *FileService) Handle(w http.ResponseWriter, r *http.Request, fileName string) {
 	if fileName == "" || fileName == "" {
 		NotFound(w, r)
 	}
@@ -44,9 +53,9 @@ func HandleFile(w http.ResponseWriter, r *http.Request, fileName string) {
 	if r.Header.Get("Cache-Control") != "no-cache" && r.Header.Get("If-Modified-Since") == mod {
 		w.WriteHeader(http.StatusNotModified)
 		return
-	}else{
-		w.Header().Set("Last-Modified", mod)
 	}
+	w.Header().Set("Last-Modified", mod)
+	w.Header().Set("Cache-Control", "max-age=" + strconv.FormatInt(fs.CacheAge, 10))
 
 	fName := fi.Name()
 	if path.Base(r.URL.Path) != fName {
@@ -56,38 +65,39 @@ func HandleFile(w http.ResponseWriter, r *http.Request, fileName string) {
 	bin := make([]byte, 32768)
 	count, err := f.Read(bin)
 
-	cType := mime.TypeByExtension(filepath.Ext(fName))
-	if cType == "" {
-		cType = http.DetectContentType(bin)
+	contType := mime.TypeByExtension(filepath.Ext(fName))
+	if contType == "" {
+		contType = http.DetectContentType(bin)
 	}
 
-	w.Header().Set("Content-Type", cType)
+	w.Header().Set("Content-Type", contType)
 
-	if PreGzipFileMimes[strings.Split(cType, ";")[0]] == true {
-		ae := strings.Split(r.Header.Get("Accept-Encoding"), ",")
-		for i := 0; i < len(ae); i++ {
-			if strings.TrimSpace(ae[i]) == "gzip" {
-				w.Header().Set("Content-Encoding", "gzip")
-				if fi.Size() <= 32768 {
-					buf := bytes.NewBuffer(make([]byte, 0, count))
-					z := gzip.NewWriter(buf)
-					z.Write(bin[:count])
-					z.Close()
-					w.Header().Set("Content-Length", strconv.Itoa(buf.Len()))
-					w.WriteHeader(http.StatusOK)
-					w.Write(buf.Bytes())
-				}else{
-					w.WriteHeader(http.StatusOK)
-					z := gzip.NewWriter(w)
-					z.Write(bin[:count])
-					if err != io.EOF {
-						io.CopyBuffer(z, f, bin)
-					}
-					z.Close()
-				}
-				return
+	ix := strings.Index(contType, ";")
+	if ix == -1 {
+		ix = len(contType)
+	}
+
+	encoType, ok := fs.Encodings[strings.TrimSpace(contType[:ix])]
+	if ok && strings.Index(r.Header.Get("Accept-Encoding"), encoType) != -1 {
+		w.Header().Set("Content-Encoding", encoType)
+		if fi.Size() <= 32768 {
+			buf := bytes.NewBuffer(make([]byte, 0, count))
+			z := encoder[encoType](buf)
+			z.Write(bin[:count])
+			z.Close()
+			w.Header().Set("Content-Length", strconv.Itoa(buf.Len()))
+			w.WriteHeader(http.StatusOK)
+			w.Write(buf.Bytes())
+		}else{
+			w.WriteHeader(http.StatusOK)
+			z := encoder[encoType](w)
+			z.Write(bin[:count])
+			if err != io.EOF {
+				io.CopyBuffer(z, f, bin)
 			}
+			z.Close()
 		}
+		return
 	}
 
 	w.Header().Set("Content-Length", strconv.FormatInt(fi.Size(), 10))
@@ -98,8 +108,8 @@ func HandleFile(w http.ResponseWriter, r *http.Request, fileName string) {
 	}
 }
 
-func FileHandler(root string) Handler {
+func (fs *FileService) Handler(root string) Handler {
 	return func(w http.ResponseWriter, r *http.Request) {
-		HandleFile(w, r, filepath.Join(root, r.URL.Query().Get("*")))
+		fs.Handle(w, r, filepath.Join(root, r.URL.Query().Get("*")))
 	}
 }
