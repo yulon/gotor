@@ -1,4 +1,4 @@
-package hs
+package gotor
 
 import (
 	"net/http"
@@ -18,11 +18,11 @@ func ToStdHandler(h Handler) http.Handler {
 	return &slh{h}
 }
 
-func New(addr string, h Handler) {
+func Run(addr string, h Handler) {
 	http.ListenAndServe(addr, ToStdHandler(h))
 }
 
-func NewTLS(addr string, certFile string, keyFile string, h Handler) {
+func RunTLS(addr string, certFile string, keyFile string, h Handler) {
 	http.ListenAndServeTLS(addr, certFile, keyFile, ToStdHandler(h))
 }
 

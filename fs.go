@@ -1,4 +1,4 @@
-package hs
+package gotor
 
 import (
 	"os"
