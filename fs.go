@@ -18,7 +18,7 @@ type FileService struct{
 	Encodings map[string]string
 }
 
-var DefaultEncodings = map[string]string{
+var EncodingsWebResources = map[string]string{
 	"text/html": "gzip",
 	"text/css": "gzip",
 	"text/plain": "gzip",
@@ -77,7 +77,12 @@ func (fs *FileService) Handle(w http.ResponseWriter, r *http.Request, fileName s
 		ix = len(contType)
 	}
 
-	encoType, ok := fs.Encodings[strings.TrimSpace(contType[:ix])]
+	var encoType string
+	var ok bool
+	if fs.Encodings != nil {
+		encoType, ok = fs.Encodings[strings.TrimSpace(contType[:ix])]
+	}
+
 	if ok && strings.Index(r.Header.Get("Accept-Encoding"), encoType) != -1 {
 		w.Header().Set("Content-Encoding", encoType)
 		if fi.Size() <= 32768 {
