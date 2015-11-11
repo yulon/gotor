@@ -74,3 +74,11 @@ func UserAgentRouter(m Route) Handler {
 		dh(w, r)
 	}
 }
+
+func DeviceRouter(pc Handler, mobile Handler) Handler {
+	return UserAgentRouter(Route{
+		"*": pc,
+		"Mobile": mobile,
+		"Android": mobile,
+	})
+}

@@ -12,11 +12,3 @@ func IsMobile(r *http.Request) bool {
 	}
 	return false
 }
-
-func DeviceHandler(pc Handler, mobile Handler) Handler {
-	return UserAgentRouter(Route{
-		"*": pc,
-		"Mobile": mobile,
-		"Android": mobile,
-	})
-}
