@@ -6,16 +6,9 @@ import (
 	"net/url"
 )
 
-func ProxyPass(target string) Handler {
-	t, err := url.Parse(target)
-	if err != nil {
-		return nil
-	}
-	rp := httputil.NewSingleHostReverseProxy(t)
-	return func(w http.ResponseWriter, r *http.Request) {
-		r.Host = t.Host
-		rp.ServeHTTP(w, r)
-	}
+type ReverseProxy struct{
+	Host bool
+	Redirect bool
 }
 
 type proxyRedirectResponseWriter struct{
@@ -37,14 +30,27 @@ func (prrw *proxyRedirectResponseWriter) WriteHeader(status int) {
 	prrw.ResponseWriter.WriteHeader(status)
 }
 
-func ProxyRedirect(target string) Handler {
-	t, err := url.Parse(target)
+func (rp *ReverseProxy) Pass(target string) Handler {
+	tu, err := url.Parse(target)
 	if err != nil {
 		return nil
 	}
-	rp := httputil.NewSingleHostReverseProxy(t)
-	return func(w http.ResponseWriter, r *http.Request) {
-		r.Host = t.Host
-		rp.ServeHTTP(&proxyRedirectResponseWriter{w, t, r.URL}, r)
+	shrp := httputil.NewSingleHostReverseProxy(tu)
+	switch {
+		case rp.Host && rp.Redirect:
+			return func(w http.ResponseWriter, r *http.Request) {
+				r.Host = tu.Host
+				shrp.ServeHTTP(&proxyRedirectResponseWriter{w, tu, r.URL}, r)
+			}
+		case rp.Host:
+			return func(w http.ResponseWriter, r *http.Request) {
+				r.Host = tu.Host
+				shrp.ServeHTTP(w, r)
+			}
+		case rp.Redirect:
+			return func(w http.ResponseWriter, r *http.Request) {
+				shrp.ServeHTTP(&proxyRedirectResponseWriter{w, tu, r.URL}, r)
+			}
 	}
+	return shrp.ServeHTTP
 }
