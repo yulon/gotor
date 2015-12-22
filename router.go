@@ -5,9 +5,9 @@ import (
 	"strings"
 )
 
-type Route map[string]Handler
+type Route map[string]http.HandlerFunc
 
-func PathRouter(m Route) Handler {
+func PathRouter(m Route) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		h, ok := m[r.URL.Path]
 		if ok {
@@ -44,19 +44,19 @@ func matchRoute(w http.ResponseWriter, r *http.Request, m Route, key string) {
 	NotFound(w, r)
 }
 
-func MethodRouter(m Route) Handler {
+func MethodRouter(m Route) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		matchRoute(w, r, m, r.Method)
 	}
 }
 
-func HostRouter(m Route) Handler {
+func HostRouter(m Route) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		matchRoute(w, r, m, r.Host)
 	}
 }
 
-func UserAgentRouter(m Route) Handler {
+func UserAgentRouter(m Route) http.HandlerFunc {
 	dh, ok := m["*"]
 	if ok {
 		delete(m, "*")
@@ -75,7 +75,7 @@ func UserAgentRouter(m Route) Handler {
 	}
 }
 
-func DeviceRouter(pc Handler, mobile Handler) Handler {
+func DeviceRouter(pc http.HandlerFunc, mobile http.HandlerFunc) http.HandlerFunc {
 	return UserAgentRouter(Route{
 		"*": pc,
 		"Mobile": mobile,

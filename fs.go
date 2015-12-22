@@ -113,7 +113,7 @@ func (fs *FileService) Handle(w http.ResponseWriter, r *http.Request, fileName s
 	}
 }
 
-func (fs *FileService) Handler(root string) Handler {
+func (fs *FileService) Handler(root string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		fs.Handle(w, r, filepath.Join(root, r.URL.Query().Get("*")))
 	}

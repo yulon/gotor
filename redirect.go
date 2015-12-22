@@ -9,13 +9,13 @@ func Redirect(w http.ResponseWriter, r *http.Request, url string, code int) {
 	w.WriteHeader(code)
 }
 
-func RedirectHandler(url string, code int) Handler {
+func RedirectHandler(url string, code int) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		Redirect(w, r, url, code)
 	}
 }
 
-func RedirectSiteHandler(site string, code int) Handler {
+func RedirectSiteHandler(site string, code int) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		Redirect(w, r, site + r.RequestURI, code)
 	}

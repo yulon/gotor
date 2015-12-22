@@ -30,7 +30,7 @@ func (prrw *proxyRedirectResponseWriter) WriteHeader(status int) {
 	prrw.ResponseWriter.WriteHeader(status)
 }
 
-func (rp *ReverseProxy) Pass(target string) Handler {
+func (rp *ReverseProxy) Pass(target string) http.HandlerFunc {
 	tu, err := url.Parse(target)
 	if err != nil {
 		return nil

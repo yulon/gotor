@@ -4,26 +4,12 @@ import (
 	"net/http"
 )
 
-type Handler func(http.ResponseWriter, *http.Request)
-
-type slh struct{
-	h Handler
+func Run(addr string, h http.HandlerFunc) {
+	http.ListenAndServe(addr, h)
 }
 
-func (s *slh) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	s.h(w, r)
+func RunTLS(addr string, certFile string, keyFile string, h http.HandlerFunc) {
+	http.ListenAndServeTLS(addr, certFile, keyFile, h)
 }
 
-func ToStdHandler(h Handler) http.Handler {
-	return &slh{h}
-}
-
-func Run(addr string, h Handler) {
-	http.ListenAndServe(addr, ToStdHandler(h))
-}
-
-func RunTLS(addr string, certFile string, keyFile string, h Handler) {
-	http.ListenAndServeTLS(addr, certFile, keyFile, ToStdHandler(h))
-}
-
-var NotFound Handler = http.NotFound
+var NotFound http.HandlerFunc = http.NotFound
