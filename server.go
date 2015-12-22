@@ -4,11 +4,11 @@ import (
 	"net/http"
 )
 
-func Run(addr string, h http.HandlerFunc) {
+func Run(addr string, hf http.HandlerFunc) {
 	http.ListenAndServe(addr, h)
 }
 
-func RunTLS(addr string, certFile string, keyFile string, h http.HandlerFunc) {
+func RunTLS(addr string, certFile string, keyFile string, hf http.HandlerFunc) {
 	http.ListenAndServeTLS(addr, certFile, keyFile, h)
 }
 
