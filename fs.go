@@ -30,7 +30,7 @@ var encoder = map[string]func(io.Writer)io.WriteCloser{
 	"gzip": func(w io.Writer)io.WriteCloser{return gzip.NewWriter(w)},
 }
 
-func (fs *FileService) Handle(w http.ResponseWriter, r *http.Request, fileName string) {
+func (fs *FileService) Single(w http.ResponseWriter, r *http.Request, fileName string) {
 	if fileName == "" || fileName == "" {
 		NotFound(w, r)
 	}
@@ -113,8 +113,8 @@ func (fs *FileService) Handle(w http.ResponseWriter, r *http.Request, fileName s
 	}
 }
 
-func (fs *FileService) Handler(root string) http.HandlerFunc {
+func (fs *FileService) BindDir(root string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		fs.Handle(w, r, filepath.Join(root, r.URL.Query().Get("*")))
+		fs.Single(w, r, filepath.Join(root, r.URL.Query().Get("*")))
 	}
 }
