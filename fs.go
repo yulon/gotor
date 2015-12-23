@@ -115,6 +115,6 @@ func (fs *FileService) Single(w http.ResponseWriter, r *http.Request, fileName s
 
 func (fs *FileService) BindDir(rootDir string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		fs.Single(w, r, filepath.Join(root, r.URL.Query().Get("*")))
+		fs.Single(w, r, filepath.Join(rootDir, r.URL.Query().Get("*")))
 	}
 }

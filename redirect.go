@@ -4,19 +4,19 @@ import (
 	"net/http"
 )
 
-func Redirect(w http.ResponseWriter, r *http.Request, url string, code int) {
+func Redirect(w http.ResponseWriter, url string, code int) {
 	w.Header().Set("Location", url)
 	w.WriteHeader(code)
 }
 
 func RedirectHandler(url string, code int) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		Redirect(w, r, url, code)
+	return func(w http.ResponseWriter, _ *http.Request) {
+		Redirect(w, url, code)
 	}
 }
 
 func RedirectSiteHandler(site string, code int) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		Redirect(w, r, site + r.RequestURI, code)
+		Redirect(w, site + r.RequestURI, code)
 	}
 }

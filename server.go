@@ -5,11 +5,11 @@ import (
 )
 
 func Run(addr string, hf http.HandlerFunc) {
-	http.ListenAndServe(addr, h)
+	http.ListenAndServe(addr, hf)
 }
 
 func RunTLS(addr string, certFile string, keyFile string, hf http.HandlerFunc) {
-	http.ListenAndServeTLS(addr, certFile, keyFile, h)
+	http.ListenAndServeTLS(addr, certFile, keyFile, hf)
 }
 
 var NotFound http.HandlerFunc = http.NotFound
