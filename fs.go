@@ -16,6 +16,7 @@ import (
 type FileService struct{
 	CacheAge int64
 	Encodings map[string]string
+	ResponseFileName bool
 }
 
 var EncodingsWebResources = map[string]string{
@@ -58,7 +59,7 @@ func (fs *FileService) Single(w http.ResponseWriter, r *http.Request, fileName s
 	w.Header().Set("Cache-Control", "max-age=" + strconv.FormatInt(fs.CacheAge, 10))
 
 	fName := fi.Name()
-	if path.Base(r.URL.Path) != fName {
+	if fs.ResponseFileName && path.Base(r.URL.Path) != fName {
 		w.Header().Add("Content-Disposition", "filename=\"" + fName + "\"")
 	}
 
