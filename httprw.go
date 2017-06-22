@@ -27,7 +27,7 @@ func newHTTPRW(srcResp http.ResponseWriter, req *http.Request) *httpResponseWrit
 }
 
 func (rw *httpResponseWriter) WriteHeader(status int) {
-	if rw.Header().Get("Content-Encoding") == "gzip" {
+	if rw.Header().Get("Content-Encoding") == "gzip" && rw.Header().Get("Content-Length") == "" {
 		if strings.Index(rw.req.Header.Get("Accept-Encoding"), "gzip") != -1 {
 			z := gzip.NewWriter(rw.ResponseWriter)
 			rw.wc = z

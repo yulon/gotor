@@ -22,6 +22,7 @@ var EncodingsWebResources = map[string]string{
 	"text/css": "gzip",
 	"text/plain": "gzip",
 	"application/javascript": "gzip",
+	"application/json": "gzip",
 	"image/bmp": "gzip",
 }
 
