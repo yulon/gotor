@@ -1,19 +1,17 @@
 package gotor
 
 import (
-	"os"
-	"net/http"
-	"strings"
-	"compress/gzip"
-	"bytes"
 	"io"
-	"strconv"
+	"mime"
+	"net/http"
+	"os"
 	"path"
 	"path/filepath"
-	"mime"
+	"strconv"
+	"strings"
 )
 
-type FileService struct{
+type FileService struct {
 	CacheAge int64
 	Encodings map[string]string
 	ResponseFileName bool
@@ -27,13 +25,10 @@ var EncodingsWebResources = map[string]string{
 	"image/bmp": "gzip",
 }
 
-var encoder = map[string]func(io.Writer)io.WriteCloser{
-	"gzip": func(w io.Writer)io.WriteCloser{return gzip.NewWriter(w)},
-}
-
 func (fs *FileService) Single(w http.ResponseWriter, r *http.Request, fileName string) {
 	if fileName == "" || fileName == "" {
 		NotFound(w, r)
+		return
 	}
 
 	f, err := os.Open(fileName)
@@ -56,11 +51,11 @@ func (fs *FileService) Single(w http.ResponseWriter, r *http.Request, fileName s
 		return
 	}
 	w.Header().Set("Last-Modified", mod)
-	w.Header().Set("Cache-Control", "max-age=" + strconv.FormatInt(fs.CacheAge, 10))
+	w.Header().Set("Cache-Control", "max-age="+strconv.FormatInt(fs.CacheAge, 10))
 
 	fName := fi.Name()
 	if fs.ResponseFileName && path.Base(r.URL.Path) != fName {
-		w.Header().Add("Content-Disposition", "filename=\"" + fName + "\"")
+		w.Header().Add("Content-Disposition", "filename=\""+fName+"\"")
 	}
 
 	bin := make([]byte, 32768)
@@ -79,34 +74,17 @@ func (fs *FileService) Single(w http.ResponseWriter, r *http.Request, fileName s
 	}
 
 	var encoType string
-	var ok bool
+	ok := false
 	if fs.Encodings != nil {
 		encoType, ok = fs.Encodings[strings.TrimSpace(contType[:ix])]
 	}
 
-	if ok && strings.Index(r.Header.Get("Accept-Encoding"), encoType) != -1 {
+	if ok {
 		w.Header().Set("Content-Encoding", encoType)
-		if fi.Size() <= 32768 {
-			buf := bytes.NewBuffer(make([]byte, 0, count))
-			z := encoder[encoType](buf)
-			z.Write(bin[:count])
-			z.Close()
-			w.Header().Set("Content-Length", strconv.Itoa(buf.Len()))
-			w.WriteHeader(http.StatusOK)
-			w.Write(buf.Bytes())
-		}else{
-			w.WriteHeader(http.StatusOK)
-			z := encoder[encoType](w)
-			z.Write(bin[:count])
-			if err != io.EOF {
-				io.CopyBuffer(z, f, bin)
-			}
-			z.Close()
-		}
-		return
+	} else {
+		w.Header().Set("Content-Length", strconv.FormatInt(fi.Size(), 10))
 	}
 
-	w.Header().Set("Content-Length", strconv.FormatInt(fi.Size(), 10))
 	w.WriteHeader(http.StatusOK)
 	w.Write(bin[:count])
 	if err != io.EOF {
