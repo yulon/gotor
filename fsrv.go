@@ -89,6 +89,11 @@ func ResponseFile(w http.ResponseWriter, r *http.Request, filePath string, cache
 
 func FileService(rootDir string, cacheAge int64, responseName bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		ResponseFile(w, r, filepath.Join(rootDir, r.URL.Query().Get("*")), cacheAge, responseName)
+		fPath := r.URL.Query().Get("*")
+		if strings.Contains(fPath, "..") {
+			NotFound(w, r)
+			return
+		}
+		ResponseFile(w, r, filepath.Join(rootDir, fPath), cacheAge, responseName)
 	}
 }
