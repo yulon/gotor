@@ -11,13 +11,7 @@ import (
 	"strings"
 )
 
-type FileService struct {
-	CacheAge int64
-	Encodings map[string]string
-	ResponseFileName bool
-}
-
-var EncodingsWebResources = map[string]string{
+var FileEncodings = map[string]string{
 	"text/html": "gzip",
 	"text/css": "gzip",
 	"text/plain": "gzip",
@@ -26,13 +20,13 @@ var EncodingsWebResources = map[string]string{
 	"image/bmp": "gzip",
 }
 
-func (fs *FileService) Single(w http.ResponseWriter, r *http.Request, fileName string) {
-	if fileName == "" || fileName == "" {
+func ResponseFile(w http.ResponseWriter, r *http.Request, filePath string, cacheAge int64, responseName bool) {
+	if filePath == "" || filePath == "" {
 		NotFound(w, r)
 		return
 	}
 
-	f, err := os.Open(fileName)
+	f, err := os.Open(filePath)
 	if err != nil {
 		NotFound(w, r)
 		return
@@ -52,11 +46,11 @@ func (fs *FileService) Single(w http.ResponseWriter, r *http.Request, fileName s
 		return
 	}
 	w.Header().Set("Last-Modified", mod)
-	w.Header().Set("Cache-Control", "max-age="+strconv.FormatInt(fs.CacheAge, 10))
+	w.Header().Set("Cache-Control", "max-age="+strconv.FormatInt(cacheAge, 10))
 
 	fName := fi.Name()
-	if fs.ResponseFileName && path.Base(r.URL.Path) != fName {
-		w.Header().Add("Content-Disposition", "filename=\""+fName+"\"")
+	if responseName && path.Base(r.URL.Path) != fName {
+		w.Header().Add("Content-Disposition", "filename=\"" + fName + "\"")
 	}
 
 	bin := make([]byte, 32768)
@@ -76,8 +70,8 @@ func (fs *FileService) Single(w http.ResponseWriter, r *http.Request, fileName s
 
 	var encoType string
 	ok := false
-	if fs.Encodings != nil {
-		encoType, ok = fs.Encodings[strings.TrimSpace(contType[:ix])]
+	if FileEncodings != nil {
+		encoType, ok = FileEncodings[strings.TrimSpace(contType[:ix])]
 	}
 
 	if ok {
@@ -93,8 +87,8 @@ func (fs *FileService) Single(w http.ResponseWriter, r *http.Request, fileName s
 	}
 }
 
-func (fs *FileService) Bridge(rootDir string) http.HandlerFunc {
+func FileService(rootDir string, cacheAge int64, responseName bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		fs.Single(w, r, filepath.Join(rootDir, r.URL.Query().Get("*")))
+		ResponseFile(w, r, filepath.Join(rootDir, r.URL.Query().Get("*")), cacheAge, responseName)
 	}
 }
