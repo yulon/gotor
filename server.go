@@ -21,8 +21,16 @@ func HTTP(addr string, hf http.HandlerFunc) error {
 	return http.ListenAndServe(addr, hfShell(hf))
 }
 
+func ServeHTTP(lnr net.Listener, hf http.HandlerFunc) error {
+	return http.Serve(lnr, hfShell(hf))
+}
+
 func HTTPS(addr string, certFile string, keyFile string, hf http.HandlerFunc) error {
 	return http.ListenAndServeTLS(addr, certFile, keyFile, hfShell(hf))
+}
+
+func ServeHTTPS(lnr net.Listener, certFile string, keyFile string, hf http.HandlerFunc) error {
+	return http.ServeTLS(lnr, hfShell(hf), certFile, keyFile)
 }
 
 func CGI(hf http.HandlerFunc) error {
@@ -35,4 +43,8 @@ func FastCGI(addr string, hf http.HandlerFunc) error {
 		return err
 	}
 	return fcgi.Serve(ln, hfShell(hf))
+}
+
+func ServeFastCGI(lnr net.Listener, hf http.HandlerFunc) error {
+	return fcgi.Serve(lnr, hfShell(hf))
 }
