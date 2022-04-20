@@ -16,10 +16,10 @@ func PathRouter(m Route) http.HandlerFunc {
 		}
 		for i := len(r.URL.Path) - 1; i >= 0; i-- {
 			if r.URL.Path[i] == '/' {
-				h, ok = m[r.URL.Path[:i + 1] + "*"]
+				h, ok = m[r.URL.Path[:i+1]+"*"]
 				if ok {
 					q := r.URL.Query()
-					q.Set("*", r.URL.Path[i:])
+					q.Set("*", r.URL.Path[i+1:])
 					r.URL.RawQuery = q.Encode()
 					h(w, r)
 					return
@@ -60,7 +60,7 @@ func UserAgentRouter(m Route) http.HandlerFunc {
 	dh, ok := m["*"]
 	if ok {
 		delete(m, "*")
-	}else{
+	} else {
 		dh = NotFound
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -77,8 +77,8 @@ func UserAgentRouter(m Route) http.HandlerFunc {
 
 func DeviceRouter(pc http.HandlerFunc, mobile http.HandlerFunc) http.HandlerFunc {
 	return UserAgentRouter(Route{
-		"*": pc,
-		"Mobile": mobile,
+		"*":       pc,
+		"Mobile":  mobile,
 		"Android": mobile,
 	})
 }
