@@ -1,10 +1,15 @@
 package gotor
 
 import (
+	"context"
+	"crypto/tls"
 	"net"
 	"net/http"
 	"net/http/cgi"
 	"net/http/fcgi"
+	"sync"
+
+	"github.com/caddyserver/certmagic"
 )
 
 var NotFound http.HandlerFunc = http.NotFound
@@ -25,12 +30,55 @@ func ServeHTTP(lnr net.Listener, hf http.HandlerFunc) error {
 	return http.Serve(lnr, hfShell(hf))
 }
 
-func HTTPS(addr string, certFile string, keyFile string, hf http.HandlerFunc) error {
-	return http.ListenAndServeTLS(addr, certFile, keyFile, hfShell(hf))
+var changeDefaultACMEMtx sync.Mutex
+
+func newTLSConfig(domains []string, email string) (*tls.Config, error) {
+	changeDefaultACMEMtx.Lock()
+
+	certmagic.DefaultACME.Agreed = true
+	certmagic.DefaultACME.Email = email
+
+	cfg := certmagic.NewDefault()
+
+	changeDefaultACMEMtx.Unlock()
+
+	err := cfg.ManageSync(context.Background(), domains)
+	if err != nil {
+		return nil, err
+	}
+
+	tlsConfig := cfg.TLSConfig()
+	tlsConfig.NextProtos = append([]string{"h2", "http/1.1"}, tlsConfig.NextProtos...)
+
+	return tlsConfig, nil
 }
 
-func ServeHTTPS(lnr net.Listener, certFile string, keyFile string, hf http.HandlerFunc) error {
-	return http.ServeTLS(lnr, hfShell(hf), certFile, keyFile)
+func HTTPS(addr string, domains []string, email string, hf http.HandlerFunc) error {
+	tlsConfig, err := newTLSConfig(domains, email)
+	if err != nil {
+		return err
+	}
+	lnr, err := tls.Listen("tcp", addr, tlsConfig)
+	if err != nil {
+		return err
+	}
+	return http.Serve(lnr, hfShell(hf))
+}
+
+func ServeHTTPS(lnr net.Listener, domains []string, email string, hf http.HandlerFunc) error {
+	tlsConfig, err := newTLSConfig(domains, email)
+	if err != nil {
+		return err
+	}
+	return http.Serve(tls.NewListener(lnr, tlsConfig), hfShell(hf))
+}
+
+func HTTPSWithHTTP(addr string, domains []string, email string, hf http.HandlerFunc) error {
+	host, port, err := net.SplitHostPort(addr)
+	if err == nil && port == "443" {
+		go HTTP(net.JoinHostPort(host, "80"), RedirectionSite("https://"+domains[0], http.StatusTemporaryRedirect))
+	}
+	return HTTPS(addr, domains, email, hf)
 }
 
 func CGI(hf http.HandlerFunc) error {
