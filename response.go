@@ -1,10 +1,10 @@
 package gotor
 
 import (
-	"net/http"
-	"io"
-	"strings"
 	"compress/gzip"
+	"io"
+	"net/http"
+	"strings"
 )
 
 type nopCloser struct {
@@ -15,20 +15,20 @@ func (*nopCloser) Close() error {
 	return nil
 }
 
-type httpResponseWriter struct {
+type responseWriter struct {
 	http.ResponseWriter
 	req *http.Request
-	wc io.WriteCloser
-	wh bool
+	wc  io.WriteCloser
+	wh  bool
 }
 
-func newHTTPRW(srcResp http.ResponseWriter, req *http.Request) *httpResponseWriter {
-	return &httpResponseWriter{srcResp, req, &nopCloser{srcResp}, false}
+func newResponseWriter(srcResp http.ResponseWriter, req *http.Request) *responseWriter {
+	return &responseWriter{srcResp, req, &nopCloser{srcResp}, false}
 }
 
-func (rw *httpResponseWriter) WriteHeader(status int) {
+func (rw *responseWriter) WriteHeader(status int) {
 	rw.wh = true
-	if rw.Header().Get("Content-Encoding") == "gzip" && rw.Header().Get("Content-Length") == "" {
+	if rw.Header().Get("Content-Encoding") == "gzip" && len(rw.Header().Get("Content-Length")) == 0 {
 		if strings.Contains(rw.req.Header.Get("Accept-Encoding"), "gzip") {
 			z := gzip.NewWriter(rw.ResponseWriter)
 			rw.wc = z
@@ -39,7 +39,7 @@ func (rw *httpResponseWriter) WriteHeader(status int) {
 	rw.ResponseWriter.WriteHeader(status)
 }
 
-func (rw *httpResponseWriter) Write(data []byte) (int, error) {
+func (rw *responseWriter) Write(data []byte) (int, error) {
 	if !rw.wh {
 		rw.WriteHeader(http.StatusOK)
 	}

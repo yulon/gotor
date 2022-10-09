@@ -17,6 +17,6 @@ func Redirection(url string, code int) http.HandlerFunc {
 
 func RedirectionSite(site string, code int) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		Redirect(w, site + r.RequestURI, code)
+		Redirect(w, site+r.RequestURI, code)
 	}
 }

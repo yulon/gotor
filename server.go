@@ -1,12 +1,16 @@
 package gotor
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/tls"
 	"net"
 	"net/http"
 	"net/http/cgi"
 	"net/http/fcgi"
+	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/caddyserver/certmagic"
@@ -14,25 +18,25 @@ import (
 
 var NotFound http.HandlerFunc = http.NotFound
 
-func hfShell(src http.HandlerFunc) http.HandlerFunc {
+func cvtHandler(src http.Handler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rw := newHTTPRW(w, r)
-		src(rw, r)
+		rw := newResponseWriter(w, r)
+		src.ServeHTTP(rw, r)
 		rw.wc.Close()
 	}
 }
 
-func HTTP(addr string, hf http.HandlerFunc) error {
-	return http.ListenAndServe(addr, hfShell(hf))
+func HTTP(addr string, h http.Handler) error {
+	return http.ListenAndServe(addr, cvtHandler(h))
 }
 
-func ServeHTTP(lnr net.Listener, hf http.HandlerFunc) error {
-	return http.Serve(lnr, hfShell(hf))
+func ServeHTTP(lnr net.Listener, h http.Handler) error {
+	return http.Serve(lnr, cvtHandler(h))
 }
 
 var changeDefaultACMEMtx sync.Mutex
 
-func newTLSConfig(domains []string, email string) (*tls.Config, error) {
+func newTLSConfig(email string, domains []string) (*tls.Config, error) {
 	changeDefaultACMEMtx.Lock()
 
 	certmagic.DefaultACME.Agreed = true
@@ -53,46 +57,98 @@ func newTLSConfig(domains []string, email string) (*tls.Config, error) {
 	return tlsConfig, nil
 }
 
-func HTTPS(addr string, domains []string, email string, hf http.HandlerFunc) error {
-	tlsConfig, err := newTLSConfig(domains, email)
+func listenTLS(addr string, email string, domains []string) (net.Listener, error) {
+	tlsConfig, err := newTLSConfig(email, domains)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	lnr, err := tls.Listen("tcp", addr, tlsConfig)
-	if err != nil {
-		return err
-	}
-	return http.Serve(lnr, hfShell(hf))
+	return tls.Listen("tcp", addr, tlsConfig)
 }
 
-func ServeHTTPS(lnr net.Listener, domains []string, email string, hf http.HandlerFunc) error {
-	tlsConfig, err := newTLSConfig(domains, email)
+func getDomains(domainHandlers HostRouter) []string {
+	var domains []string
+	for domain := range domainHandlers {
+		domains = append(domains, domain)
+	}
+	return domains
+}
+
+func HTTPS(addr string, email string, domainHandlers HostRouter) error {
+	lnr, err := listenTLS(addr, email, getDomains(domainHandlers))
 	if err != nil {
 		return err
 	}
-	return http.Serve(tls.NewListener(lnr, tlsConfig), hfShell(hf))
+	return http.Serve(lnr, cvtHandler(domainHandlers))
 }
 
-func HTTPSWithHTTP(addr string, domains []string, email string, hf http.HandlerFunc) error {
+func ServeHTTPS(lnr net.Listener, email string, domainHandlers HostRouter) error {
+	tlsConfig, err := newTLSConfig(email, getDomains(domainHandlers))
+	if err != nil {
+		return err
+	}
+	return http.Serve(tls.NewListener(lnr, tlsConfig), cvtHandler(domainHandlers))
+}
+
+var http2HTTPSCode = []byte(`<html><head><script type="text/javascript">location.protocol='https:'</script></head><body></body></html>`)
+
+var http2HTTPSCodeLenStr = strconv.Itoa(len(http2HTTPSCode))
+
+func getGzipHTTP2HTTPSCode() []byte {
+	b := bytes.NewBuffer([]byte{})
+	z := gzip.NewWriter(b)
+	z.Write(http2HTTPSCode)
+	z.Close()
+	return b.Bytes()
+}
+
+var gzipHTTP2HTTPSCode = getGzipHTTP2HTTPSCode()
+
+var gzipHTTP2HTTPSCodeLenStr = strconv.Itoa(len(gzipHTTP2HTTPSCode))
+
+func HTTPSWithHTTP(addr string, email string, domainHandlers HostRouter) error {
+	domains := getDomains(domainHandlers)
 	host, port, err := net.SplitHostPort(addr)
 	if err == nil && port == "443" {
-		go HTTP(net.JoinHostPort(host, "80"), RedirectionSite("https://"+domains[0], http.StatusTemporaryRedirect))
+		var h80 http.HandlerFunc
+		if len(domains) == 1 {
+			h80 = RedirectionSite("https://"+domains[0], http.StatusTemporaryRedirect)
+		} else {
+			h80 = func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "text/html; charset=UTF-8")
+				w.Header().Set("Cache-Control", "no-cache")
+				if strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+					w.Header().Set("Content-Encoding", "gzip")
+					w.Header().Set("Content-Length", gzipHTTP2HTTPSCodeLenStr)
+					w.WriteHeader(http.StatusOK)
+					w.Write(gzipHTTP2HTTPSCode)
+					return
+				}
+				w.Header().Set("Content-Length", http2HTTPSCodeLenStr)
+				w.WriteHeader(http.StatusOK)
+				w.Write(http2HTTPSCode)
+			}
+		}
+		go http.ListenAndServe(net.JoinHostPort(host, "80"), h80)
 	}
-	return HTTPS(addr, domains, email, hf)
+	lnr, err := listenTLS(addr, email, domains)
+	if err != nil {
+		return err
+	}
+	return http.Serve(lnr, cvtHandler(domainHandlers))
 }
 
-func CGI(hf http.HandlerFunc) error {
-	return cgi.Serve(hfShell(hf))
+func CGI(h http.HandlerFunc) error {
+	return cgi.Serve(cvtHandler(h))
 }
 
-func FastCGI(addr string, hf http.HandlerFunc) error {
+func FastCGI(addr string, h http.HandlerFunc) error {
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return err
 	}
-	return fcgi.Serve(ln, hfShell(hf))
+	return fcgi.Serve(ln, cvtHandler(h))
 }
 
-func ServeFastCGI(lnr net.Listener, hf http.HandlerFunc) error {
-	return fcgi.Serve(lnr, hfShell(hf))
+func ServeFastCGI(lnr net.Listener, h http.HandlerFunc) error {
+	return fcgi.Serve(lnr, cvtHandler(h))
 }

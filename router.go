@@ -5,80 +5,75 @@ import (
 	"strings"
 )
 
-type Route map[string]http.HandlerFunc
+type PathRouter map[string]http.Handler
 
-func PathRouter(m Route) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		h, ok := m[r.URL.Path]
-		if ok {
-			h(w, r)
-			return
-		}
-		for i := len(r.URL.Path) - 1; i >= 0; i-- {
-			if r.URL.Path[i] == '/' {
-				h, ok = m[r.URL.Path[:i+1]+"*"]
-				if ok {
-					q := r.URL.Query()
-					q.Set("*", r.URL.Path[i+1:])
-					r.URL.RawQuery = q.Encode()
-					h(w, r)
-					return
-				}
+func (m PathRouter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	h, ok := m[r.URL.Path]
+	if ok {
+		h.ServeHTTP(w, r)
+		return
+	}
+	for i := len(r.URL.Path) - 1; i >= 0; i-- {
+		if r.URL.Path[i] == '/' {
+			h, ok = m[r.URL.Path[:i+1]+"*"]
+			if ok {
+				q := r.URL.Query()
+				q.Set("*", r.URL.Path[i+1:])
+				h.ServeHTTP(w, r)
+				return
 			}
 		}
-		NotFound(w, r)
 	}
+	NotFound(w, r)
 }
 
-func matchRoute(w http.ResponseWriter, r *http.Request, m Route, key string) {
+func matchRoute(w http.ResponseWriter, r *http.Request, m map[string]http.Handler, key string) {
 	h, ok := m[key]
 	if ok {
-		h(w, r)
+		h.ServeHTTP(w, r)
 		return
 	}
 	h, ok = m["*"]
 	if ok {
-		h(w, r)
+		h.ServeHTTP(w, r)
 		return
 	}
 	NotFound(w, r)
 }
 
-func MethodRouter(m Route) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		matchRoute(w, r, m, r.Method)
-	}
+type MethodRouter map[string]http.Handler
+
+func (m MethodRouter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	matchRoute(w, r, m, r.Method)
 }
 
-func HostRouter(m Route) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		matchRoute(w, r, m, r.Host)
-	}
+type HostRouter map[string]http.Handler
+
+func (m HostRouter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	matchRoute(w, r, m, r.Host)
 }
 
-func UserAgentRouter(m Route) http.HandlerFunc {
+type UserAgentRouter map[string]http.Handler
+
+func (m UserAgentRouter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	dh, ok := m["*"]
-	if ok {
-		delete(m, "*")
-	} else {
+	if !ok {
 		dh = NotFound
 	}
-	return func(w http.ResponseWriter, r *http.Request) {
-		ua := r.UserAgent()
-		for k, h := range m {
-			if strings.Index(ua, k) != -1 {
-				h(w, r)
-				return
-			}
+	ua := r.UserAgent()
+	for k, h := range m {
+		if strings.Index(ua, k) != -1 {
+			h.ServeHTTP(w, r)
+			return
 		}
-		dh(w, r)
 	}
+	dh.ServeHTTP(w, r)
 }
 
-func DeviceRouter(pc http.HandlerFunc, mobile http.HandlerFunc) http.HandlerFunc {
-	return UserAgentRouter(Route{
+func DeviceRouter(pc http.Handler, mobile http.Handler) http.Handler {
+	return UserAgentRouter{
 		"*":       pc,
 		"Mobile":  mobile,
 		"Android": mobile,
-	})
+	}
 }
