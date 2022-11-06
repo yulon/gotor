@@ -69,7 +69,7 @@ type ProxyValve struct {
 	DownloadLimit uint64
 }
 
-func Proxy(tp *http.Transport, valve *ProxyValve, auth func(user, passwd string) *ProxyValve) http.HandlerFunc {
+func Proxy(tp *http.Transport, defaultValve *ProxyValve, auth func(user, passwd string) *ProxyValve) http.HandlerFunc {
 	if tp == nil {
 		tp = &http.Transport{
 			ForceAttemptHTTP2:     true,
@@ -124,16 +124,16 @@ func Proxy(tp *http.Transport, valve *ProxyValve, auth func(user, passwd string)
 				return
 			}
 
-			if valve != nil {
-				if userValve.UploadLimit < 0 && valve.UploadLimit >= 0 {
-					userValve.UploadLimit = valve.UploadLimit
+			if defaultValve != nil {
+				if userValve.UploadLimit < 0 && defaultValve.UploadLimit >= 0 {
+					userValve.UploadLimit = defaultValve.UploadLimit
 				}
-				if userValve.DownloadLimit < 0 && valve.DownloadLimit >= 0 {
-					userValve.DownloadLimit = valve.DownloadLimit
+				if userValve.DownloadLimit < 0 && defaultValve.DownloadLimit >= 0 {
+					userValve.DownloadLimit = defaultValve.DownloadLimit
 				}
 			}
-		} else if valve != nil {
-			userValve = valve
+		} else if defaultValve != nil {
+			userValve = defaultValve
 		}
 
 		if r.Method == "CONNECT" {
