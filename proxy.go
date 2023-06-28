@@ -1,14 +1,20 @@
 package gotor
 
 import (
+	"bufio"
 	"context"
 	"encoding/base64"
+	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/yulon/go-netil"
+	"github.com/yulon/gocks5"
 )
 
 const halfUint64 uint64 = uint64(18446744073709551615) / uint64(2)
@@ -47,144 +53,296 @@ func (lr slowReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
-func pxyAuthCredDecBasic(cont string) []string {
-	b := make([]byte, len(cont)*2)
-	n, err := base64.RawStdEncoding.Decode(b, []byte(strings.TrimSpace(cont)))
-	if err != nil || n == 0 {
+func hostToAddr(proto, host string) (addr string) {
+	addr = host
+	colonPos := strings.LastIndexByte(addr, ':')
+	if colonPos < 0 || colonPos < strings.LastIndexByte(addr, ']') {
+		switch proto {
+		case "http":
+			addr += ":80"
+		case "https":
+			addr += ":443"
+		}
+	}
+	return
+}
+
+func URLToAddr(u *url.URL) string {
+	return hostToAddr(strings.ToLower(u.Scheme), u.Host)
+}
+
+func basicAuthEnc(u *url.Userinfo) string {
+	auth := u.Username()
+	pw, hasPw := u.Password()
+	if hasPw {
+		auth += ":" + pw
+	}
+	return base64.StdEncoding.EncodeToString([]byte(auth))
+}
+
+func basicAuthDec(s string) *url.Userinfo {
+	b, err := base64.StdEncoding.DecodeString(s)
+	if err != nil || len(b) == 0 {
 		return nil
 	}
-	parts := strings.SplitN(string(b[:n]), ":", 2)
+	auth := strings.TrimSpace(string(b))
+	if len(auth) == 0 {
+		return nil
+	}
+	parts := strings.SplitN(string(b), ":", 2)
 	if len(parts) != 2 {
+		return url.User(strings.TrimSpace(parts[0]))
+	}
+	return url.UserPassword(strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1]))
+}
+
+var otherAuthDecs = map[string]func(string) *url.Userinfo{}
+
+func DialPass(proxy *url.URL, addr net.Addr, dial func(addr net.Addr) (net.Conn, error)) (net.Conn, error) {
+	if proxy == nil {
+		return netil.DialOrDirect(addr, dial)
+	}
+	proto := strings.ToLower(proxy.Scheme)
+	switch proto {
+	case "socks5":
+		u := proxy.User.Username()
+		p, _ := proxy.User.Password()
+
+		if dial == nil {
+			con, _, _, err := gocks5.DialTCPPass(proxy.Host, u, p, addr)
+			return con, err
+		}
+
+		pxyRawCon, err := dial(netil.DomainAddr(proxy.Host))
+		if err != nil {
+			return nil, err
+		}
+		pxyCon, _, err := gocks5.PassRawConn(pxyRawCon, u, p)
+		if err != nil {
+			return nil, err
+		}
+		con, _, err := pxyCon.DialTCP(addr)
+		return con, err
+
+	case "http":
+		fallthrough
+	case "https":
+		saddr := hostToAddr(proto, proxy.Host)
+		auth := basicAuthEnc(proxy.User)
+		if len(auth) > 0 {
+			auth = "Basic " + auth
+		}
+
+		var pxyCon net.Conn
+		var err error
+		if dial != nil {
+			pxyCon, err = dial(netil.DomainAddr(saddr))
+		} else {
+			pxyCon, err = net.Dial("tcp", saddr)
+		}
+		if err != nil {
+			return nil, err
+		}
+
+		req := &http.Request{
+			Method: "CONNECT",
+			URL:    &url.URL{Opaque: addr.String()},
+		}
+		if len(auth) > 0 {
+			req.Header.Set("Proxy-Authorization", auth)
+		}
+		err = req.Write(pxyCon)
+		if err != nil {
+			return nil, err
+		}
+
+		pxyR := bufio.NewReader(pxyCon)
+		resp, err := http.ReadResponse(pxyR, req)
+		if err != nil {
+			return nil, err
+		}
+
+		if resp.StatusCode != 200 {
+			errStr := http.StatusText(resp.StatusCode)
+			if resp.StatusCode == http.StatusProxyAuthRequired {
+				errStr += " " + resp.Header.Get("Proxy-Authenticate")
+			}
+			return nil, errors.New(errStr)
+		}
+
+		return pxyCon, nil
+	}
+	return nil, errors.New("unsupported " + proto)
+}
+
+type ProxyConnConfig struct {
+	Transport *http.Transport
+	/*UpLimiter   *gocks5.SpeedLimiter
+	DownLimiter *gocks5.SpeedLimiter*/
+}
+
+type Proxy struct {
+	OnRequest func(r *http.Request, user *url.Userinfo) (bool, *ProxyConnConfig)
+	Transport *http.Transport
+}
+
+func getUser(r *http.Request, field string) *url.Userinfo {
+	pa := r.Header.Get(field)
+	if len(pa) == 0 {
 		return nil
 	}
-	parts[0] = strings.TrimSpace(parts[0])
-	parts[1] = strings.TrimSpace(parts[1])
-	return parts
-}
 
-var otherPxyAuthCredDecs = map[string]func(string) []string{}
-
-type ProxyValve struct {
-	UploadLimit   uint64
-	DownloadLimit uint64
-}
-
-func Proxy(tp *http.Transport, defaultValve *ProxyValve, auth func(user, passwd string) *ProxyValve) http.HandlerFunc {
-	if tp == nil {
-		tp = &http.Transport{
-			ForceAttemptHTTP2:     true,
-			MaxIdleConns:          100,
-			IdleConnTimeout:       90 * time.Second,
-			TLSHandshakeTimeout:   10 * time.Second,
-			ExpectContinueTimeout: 1 * time.Second,
-		}
+	paParts := strings.SplitN(pa, " ", 2)
+	if len(paParts) != 2 {
+		return nil
 	}
-	return func(w http.ResponseWriter, r *http.Request) {
-		var userValve *ProxyValve = nil
+	pat := strings.TrimSpace(paParts[0])
+	pac := strings.TrimSpace(paParts[1])
 
-		if auth != nil {
-			pa := r.Header.Get("Proxy-Authorization")
-			if len(pa) == 0 {
+	if pat == "Basic" {
+		return basicAuthDec(pac)
+	}
+	pacDec, ok := otherAuthDecs[pat]
+	if !ok {
+		return nil
+	}
+	return pacDec(pac)
+}
+
+func GetProxyUser(r *http.Request) *url.Userinfo {
+	return getUser(r, "Proxy-Authorization")
+}
+
+var proxyDefaultTransport = &http.Transport{
+	ForceAttemptHTTP2:     true,
+	MaxIdleConns:          100,
+	IdleConnTimeout:       90 * time.Second,
+	TLSHandshakeTimeout:   10 * time.Second,
+	ExpectContinueTimeout: 1 * time.Second,
+}
+
+func (pxy *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	tp := pxy.Transport
+	if tp == nil {
+		tp = proxyDefaultTransport
+	}
+
+	u := GetProxyUser(r)
+	var pcc *ProxyConnConfig
+	if pxy.OnRequest != nil {
+		var ok bool
+		ok, pcc = pxy.OnRequest(r, u)
+		if !ok {
+			if u == nil {
 				w.Header().Set("Proxy-Authenticate", "Basic")
 				w.WriteHeader(http.StatusProxyAuthRequired)
 				return
 			}
-			r.Header.Del("Proxy-Authorization")
-
-			paParts := strings.SplitN(pa, " ", 2)
-			if len(paParts) != 2 {
-				w.Header().Set("Proxy-Authenticate", "Basic")
-				w.WriteHeader(http.StatusProxyAuthRequired)
-				return
-			}
-			pat := strings.TrimSpace(paParts[0])
-			pac := strings.TrimSpace(paParts[1])
-
-			var up []string
-			if pat == "Basic" {
-				up = pxyAuthCredDecBasic(pac)
-			} else {
-				pacDec, ok := otherPxyAuthCredDecs[pat]
-				if !ok {
-					w.Header().Set("Proxy-Authenticate", "Basic")
-					w.WriteHeader(http.StatusProxyAuthRequired)
-					return
-				}
-				up = pacDec(pac)
-			}
-			if len(up) != 2 {
-				w.Header().Set("Proxy-Authenticate", "Basic")
-				w.WriteHeader(http.StatusProxyAuthRequired)
-				return
-			}
-
-			userValve = auth(up[0], up[1])
-			if userValve == nil {
-				w.WriteHeader(http.StatusForbidden)
-				return
-			}
-
-			if defaultValve != nil {
-				if userValve.UploadLimit < 0 && defaultValve.UploadLimit >= 0 {
-					userValve.UploadLimit = defaultValve.UploadLimit
-				}
-				if userValve.DownloadLimit < 0 && defaultValve.DownloadLimit >= 0 {
-					userValve.DownloadLimit = defaultValve.DownloadLimit
-				}
-			}
-		} else if defaultValve != nil {
-			userValve = defaultValve
-		}
-
-		if r.Method == "CONNECT" {
-			tarCon, err := tp.DialContext(context.Background(), "tcp", r.RequestURI)
-			if err != nil {
-				w.WriteHeader(http.StatusBadGateway)
-				return
-			}
-			defer tarCon.Close()
-
-			pxyCon, _, err := w.(http.Hijacker).Hijack()
-			if err != nil {
-				w.WriteHeader(http.StatusBadGateway)
-				return
-			}
-			defer pxyCon.Close()
-
-			pxyCon.Write([]byte(r.Proto + " 200 Connection Established\r\n\r\n"))
-
-			if userValve != nil {
-				go io.Copy(tarCon, newSlowReader(pxyCon, userValve.UploadLimit))
-				io.Copy(pxyCon, newSlowReader(tarCon, userValve.DownloadLimit))
-				return
-			}
-			go io.Copy(tarCon, pxyCon)
-			io.Copy(pxyCon, tarCon)
+			w.WriteHeader(http.StatusForbidden)
 			return
 		}
+		if pcc.Transport != nil {
+			tp = pcc.Transport
+		}
+	}
 
-		r.Header.Set("Connection", r.Header.Get("Proxy-Connection"))
-		r.Header.Del("Proxy-Connection")
-
-		r.RequestURI = ""
-		resp, err := tp.RoundTrip(r) // TODO: use userValve.UploadLimit
+	if r.Method == "CONNECT" {
+		svrAddr := URLToAddr(r.URL)
+		var svrCon net.Conn
+		var err error
+		if tp.Proxy != nil {
+			var proxy *url.URL
+			proxy, err = tp.Proxy(r)
+			if err != nil {
+				w.WriteHeader(http.StatusBadGateway)
+				return
+			}
+			if proxy != nil {
+				var dial func(addr net.Addr) (net.Conn, error)
+				if tp.DialContext != nil {
+					dial = func(addr net.Addr) (net.Conn, error) {
+						return tp.DialContext(context.Background(), "tcp", addr.String())
+					}
+				} else if tp.Dial != nil {
+					dial = func(addr net.Addr) (net.Conn, error) {
+						return tp.Dial("tcp", addr.String())
+					}
+				}
+				svrCon, err = DialPass(proxy, netil.DomainAddr(svrAddr), dial)
+			}
+		} else if tp.DialContext != nil {
+			svrCon, err = tp.DialContext(context.Background(), "tcp", svrAddr)
+		} else if tp.Dial != nil {
+			svrCon, err = tp.Dial("tcp", svrAddr)
+		} else {
+			svrCon, err = net.Dial("tcp", svrAddr)
+		}
 		if err != nil {
 			w.WriteHeader(http.StatusBadGateway)
 			return
 		}
-		defer resp.Body.Close()
 
-		for k := range resp.Header {
-			w.Header().Set(k, resp.Header.Get(k))
-		}
-		w.WriteHeader(resp.StatusCode)
-
-		if userValve != nil {
-			io.Copy(w, newSlowReader(resp.Body, userValve.DownloadLimit))
+		cltCon, cltBuf, err := w.(http.Hijacker).Hijack()
+		if err != nil {
+			svrCon.Close()
+			w.WriteHeader(http.StatusBadGateway)
 			return
 		}
-		io.Copy(w, resp.Body)
+
+		/*cltConEdr := &gocks5.Eavesdropper{}
+		cltConEdr.LimitWriteSpeed(pcc.UpLimiter)
+		cltConEdr.LimitReadSpeed(pcc.DownLimiter)
+		cltCon = cltConEdr.WrapConn(cltCon) */
+
+		err = netil.WriteAll(cltCon, []byte(r.Proto+" 200 Connection Established\r\n\r\n"))
+		if err != nil {
+			svrCon.Close()
+			cltCon.Close()
+			return
+		}
+
+		b := netil.AllocBuffer()
+		defer netil.RecycleBuffer(b)
+
+		for cltBuf.Reader.Buffered() > 0 {
+			n, err := cltBuf.Reader.Read(b)
+			if n == 0 {
+				svrCon.Close()
+				cltCon.Close()
+				return
+			}
+			err = netil.WriteAll(svrCon, b[:n])
+			if err != nil {
+				svrCon.Close()
+				cltCon.Close()
+				return
+			}
+		}
+
+		netil.Forward(cltCon, svrCon, b)
+		return
 	}
+
+	r.RequestURI = ""
+	r.Header.Del("Proxy-Authorization")
+	r.Header.Set("Connection", r.Header.Get("Proxy-Connection"))
+	r.Header.Del("Proxy-Connection")
+
+	resp, err := tp.RoundTrip(r)
+	if err != nil {
+		w.WriteHeader(http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+
+	for k := range resp.Header {
+		for _, v := range resp.Header.Values(k) {
+			w.Header().Add(k, v)
+		}
+	}
+	w.WriteHeader(resp.StatusCode)
+
+	io.Copy(w, resp.Body)
 }
 
 type proxyRedirectResponseWriter struct {
