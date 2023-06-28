@@ -30,7 +30,11 @@ func responseFile(w http.ResponseWriter, r *http.Request, f *os.File, fi fs.File
 	}
 	w.Header().Set("Last-Modified", mod)
 
-	w.Header().Set("Cache-Control", "max-age="+strconv.FormatInt(cacheAge, 10))
+	if cacheAge >= 0 {
+		w.Header().Set("Cache-Control", "max-age="+strconv.FormatInt(cacheAge, 10))
+	} else {
+		w.Header().Set("Cache-Control", "no-store")
+	}
 
 	fName := fi.Name()
 	if responseName && path.Base(r.URL.Path) != fName {
@@ -73,31 +77,28 @@ func responseFile(w http.ResponseWriter, r *http.Request, f *os.File, fi fs.File
 	io.Copy(w, f)
 }
 
-func ResponseFile(w http.ResponseWriter, r *http.Request, filePath string, cacheAge int64, responseName bool) {
+func ResponseFile(w http.ResponseWriter, r *http.Request, filePath string, cacheAge int64, responseName bool) bool {
 	if len(filePath) == 0 {
-		NotFound(w, r)
-		return
+		return false
 	}
 
 	f, err := os.Open(filePath)
 	if err != nil {
-		NotFound(w, r)
-		return
+		return false
 	}
 	defer f.Close()
 
 	fi, err := f.Stat()
 	if err != nil {
-		NotFound(w, r)
-		return
+		return false
 	}
 
 	if fi.IsDir() {
-		NotFound(w, r)
-		return
+		return false
 	}
 
 	responseFile(w, r, f, fi, cacheAge, responseName)
+	return true
 }
 
 var indexFileNames = []string{
