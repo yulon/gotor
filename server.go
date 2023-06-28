@@ -18,7 +18,7 @@ import (
 
 var NotFound http.HandlerFunc = http.NotFound
 
-func cvtHandler(src http.Handler) http.HandlerFunc {
+func SmartHandler(src http.Handler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		rw := newResponseWriter(w, r)
 		src.ServeHTTP(rw, r)
@@ -27,11 +27,11 @@ func cvtHandler(src http.Handler) http.HandlerFunc {
 }
 
 func HTTP(addr string, h http.Handler) error {
-	return http.ListenAndServe(addr, cvtHandler(h))
+	return http.ListenAndServe(addr, SmartHandler(h))
 }
 
 func ServeHTTP(lnr net.Listener, h http.Handler) error {
-	return http.Serve(lnr, cvtHandler(h))
+	return http.Serve(lnr, SmartHandler(h))
 }
 
 var changeDefaultACMEMtx sync.Mutex
@@ -78,7 +78,7 @@ func HTTPS(addr string, email string, domainHandlers HostRouter) error {
 	if err != nil {
 		return err
 	}
-	return http.Serve(lnr, cvtHandler(domainHandlers))
+	return http.Serve(lnr, SmartHandler(domainHandlers))
 }
 
 func ServeHTTPS(lnr net.Listener, email string, domainHandlers HostRouter) error {
@@ -86,7 +86,7 @@ func ServeHTTPS(lnr net.Listener, email string, domainHandlers HostRouter) error
 	if err != nil {
 		return err
 	}
-	return http.Serve(tls.NewListener(lnr, tlsConfig), cvtHandler(domainHandlers))
+	return http.Serve(tls.NewListener(lnr, tlsConfig), SmartHandler(domainHandlers))
 }
 
 var http2HTTPSCode = []byte(`<html><head><script type="text/javascript">location.protocol='https:'</script></head><body></body></html>`)
@@ -134,11 +134,11 @@ func HTTPSWithHTTP(addr string, email string, domainHandlers HostRouter) error {
 	if err != nil {
 		return err
 	}
-	return http.Serve(lnr, cvtHandler(domainHandlers))
+	return http.Serve(lnr, SmartHandler(domainHandlers))
 }
 
 func CGI(h http.HandlerFunc) error {
-	return cgi.Serve(cvtHandler(h))
+	return cgi.Serve(SmartHandler(h))
 }
 
 func FastCGI(addr string, h http.HandlerFunc) error {
@@ -146,9 +146,9 @@ func FastCGI(addr string, h http.HandlerFunc) error {
 	if err != nil {
 		return err
 	}
-	return fcgi.Serve(ln, cvtHandler(h))
+	return fcgi.Serve(ln, SmartHandler(h))
 }
 
 func ServeFastCGI(lnr net.Listener, h http.HandlerFunc) error {
-	return fcgi.Serve(lnr, cvtHandler(h))
+	return fcgi.Serve(lnr, SmartHandler(h))
 }
