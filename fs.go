@@ -12,13 +12,25 @@ import (
 	"strings"
 )
 
-var FileEncodings = map[string]string{
-	"text/html":              "gzip",
-	"text/css":               "gzip",
-	"text/plain":             "gzip",
-	"application/javascript": "gzip",
-	"application/json":       "gzip",
-	"image/bmp":              "gzip",
+var rawContTypes = map[string]bool{
+	"text/html":                     true,
+	"text/css":                      true,
+	"text/plain":                    true,
+	"text/xml":                      true,
+	"text/x-component":              true,
+	"application/javascript":        true,
+	"application/json":              true,
+	"application/x-javascript":      true,
+	"application/xml":               true,
+	"application/xhtml+xml":         true,
+	"application/rss+xml":           true,
+	"application/atom+xml":          true,
+	"application/x-font-ttf":        true,
+	"application/vnd.ms-fontobject": true,
+	"image/svg+xml":                 true,
+	"image/x-icon":                  true,
+	"image/bmp":                     true,
+	"font/opentype":                 true,
 }
 
 func responseFile(w http.ResponseWriter, r *http.Request, f *os.File, fi fs.FileInfo, cacheAge int64, responseName bool) {
@@ -62,11 +74,17 @@ func responseFile(w http.ResponseWriter, r *http.Request, f *os.File, fi fs.File
 		ix = len(contType)
 	}
 
-	encoType, ok := FileEncodings[strings.TrimSpace(contType[:ix])]
-	if ok {
-		w.Header().Set("Content-Encoding", encoType)
+	n := fi.Size()
+	if n == 0 {
+		w.Header().Set("Content-Length", "0")
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	if rawContTypes[strings.TrimSpace(contType[:ix])] {
+		w.Header().Set("Content-Encoding", "br")
 	} else {
-		w.Header().Set("Content-Length", strconv.FormatInt(fi.Size(), 10))
+		w.Header().Set("Content-Length", strconv.FormatInt(n, 10))
 	}
 
 	w.WriteHeader(http.StatusOK)

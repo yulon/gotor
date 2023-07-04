@@ -5,6 +5,8 @@ import (
 	"io"
 	"net/http"
 	"strings"
+
+	"github.com/andybalholm/brotli"
 )
 
 type nopCloser struct {
@@ -15,33 +17,93 @@ func (*nopCloser) Close() error {
 	return nil
 }
 
-type responseWriter struct {
+type smartRespWriter struct {
 	http.ResponseWriter
-	req *http.Request
-	wc  io.WriteCloser
-	wh  bool
+	req       *http.Request
+	enc       io.WriteCloser
+	isWritten bool
+	status    int
+	wantBr    bool
+	wantGz    bool
 }
 
-func newResponseWriter(srcResp http.ResponseWriter, req *http.Request) *responseWriter {
-	return &responseWriter{srcResp, req, &nopCloser{srcResp}, false}
+func newSmartRespWriter(srcResp http.ResponseWriter, req *http.Request) *smartRespWriter {
+	return &smartRespWriter{srcResp, req, nil, false, -1, false, false}
 }
 
-func (rw *responseWriter) WriteHeader(status int) {
-	rw.wh = true
-	if rw.Header().Get("Content-Encoding") == "gzip" && len(rw.Header().Get("Content-Length")) == 0 {
-		if strings.Contains(rw.req.Header.Get("Accept-Encoding"), "gzip") {
-			z := gzip.NewWriter(rw.ResponseWriter)
-			rw.wc = z
+func (srw *smartRespWriter) WriteHeader(status int) {
+	srw.status = status
+}
+
+func (srw *smartRespWriter) Write(data []byte) (int, error) {
+	if srw.enc != nil {
+		return srw.enc.Write(data)
+	}
+	if !srw.isWritten {
+		srw.isWritten = true
+		if srw.status < 0 {
+			srw.status = http.StatusOK
+		}
+		if len(srw.Header().Get("Content-Length")) == 0 {
+			ce := strings.ToLower(srw.Header().Get("Content-Encoding"))
+			switch ce {
+			case "br":
+				if strings.Contains(strings.ToLower(srw.req.Header.Get("Accept-Encoding")), "br") {
+					srw.wantBr = true
+					break
+				}
+				srw.Header().Set("Content-Encoding", "gzip")
+				fallthrough
+			case "gzip":
+				if strings.Contains(strings.ToLower(srw.req.Header.Get("Accept-Encoding")), "gzip") {
+					srw.wantGz = true
+				} else {
+					srw.Header().Del("Content-Encoding")
+					srw.ResponseWriter.WriteHeader(srw.status)
+				}
+			}
 		} else {
-			rw.Header().Del("Content-Encoding")
+			srw.ResponseWriter.WriteHeader(srw.status)
 		}
 	}
-	rw.ResponseWriter.WriteHeader(status)
+	if srw.wantBr {
+		if len(data) == 0 {
+			return 0, nil
+		}
+		srw.wantBr = false
+		srw.ResponseWriter.WriteHeader(srw.status)
+		srw.enc = brotli.NewWriter(srw.ResponseWriter)
+		return srw.enc.Write(data)
+	}
+	if srw.wantGz {
+		if len(data) == 0 {
+			return 0, nil
+		}
+		srw.wantGz = false
+		srw.ResponseWriter.WriteHeader(srw.status)
+		srw.enc = gzip.NewWriter(srw.ResponseWriter)
+		return srw.enc.Write(data)
+	}
+	return srw.ResponseWriter.Write(data)
 }
 
-func (rw *responseWriter) Write(data []byte) (int, error) {
-	if !rw.wh {
-		rw.WriteHeader(http.StatusOK)
+func (srw *smartRespWriter) Close() error {
+	if srw.enc != nil {
+		err := srw.enc.Close()
+		srw.enc = nil
+		return err
 	}
-	return rw.wc.Write(data)
+	if srw.wantBr {
+		srw.wantBr = false
+		srw.Header().Del("Content-Encoding")
+		srw.Header().Set("Content-Length", "0")
+		srw.ResponseWriter.WriteHeader(srw.status)
+	}
+	if srw.wantGz {
+		srw.wantGz = false
+		srw.Header().Del("Content-Encoding")
+		srw.Header().Set("Content-Length", "0")
+		srw.ResponseWriter.WriteHeader(srw.status)
+	}
+	return nil
 }

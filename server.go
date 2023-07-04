@@ -20,9 +20,9 @@ var NotFound http.HandlerFunc = http.NotFound
 
 func SmartHandler(src http.Handler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rw := newResponseWriter(w, r)
+		rw := newSmartRespWriter(w, r)
 		src.ServeHTTP(rw, r)
-		rw.wc.Close()
+		rw.Close()
 	}
 }
 
