@@ -1,6 +1,7 @@
 package gotor
 
 import (
+	"net"
 	"net/http"
 	"strings"
 )
@@ -19,6 +20,7 @@ func (m PathRouter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if ok {
 				q := r.URL.Query()
 				q.Set("*", r.URL.Path[i+1:])
+				r.URL.RawQuery = q.Encode()
 				h.ServeHTTP(w, r)
 				return
 			}
@@ -50,7 +52,11 @@ func (m MethodRouter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 type HostRouter map[string]http.Handler
 
 func (m HostRouter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	matchRoute(w, r, m, r.Host)
+	host, _, err := net.SplitHostPort(r.Host)
+	if err != nil {
+		return
+	}
+	matchRoute(w, r, m, host)
 }
 
 type UserAgentRouter map[string]http.Handler
