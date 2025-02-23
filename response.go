@@ -66,19 +66,16 @@ func (srw *smartRespWriter) Write(data []byte) (int, error) {
 			srw.ResponseWriter.WriteHeader(srw.status)
 		}
 	}
+	if len(data) == 0 {
+		return 0, nil
+	}
 	if srw.wantBr {
-		if len(data) == 0 {
-			return 0, nil
-		}
 		srw.wantBr = false
 		srw.ResponseWriter.WriteHeader(srw.status)
 		srw.enc = brotli.NewWriter(srw.ResponseWriter)
 		return srw.enc.Write(data)
 	}
 	if srw.wantGz {
-		if len(data) == 0 {
-			return 0, nil
-		}
 		srw.wantGz = false
 		srw.ResponseWriter.WriteHeader(srw.status)
 		srw.enc = gzip.NewWriter(srw.ResponseWriter)
@@ -88,6 +85,10 @@ func (srw *smartRespWriter) Write(data []byte) (int, error) {
 }
 
 func (srw *smartRespWriter) Close() error {
+	if !srw.isWritten {
+		srw.ResponseWriter.WriteHeader(srw.status)
+		return nil
+	}
 	if srw.enc != nil {
 		err := srw.enc.Close()
 		srw.enc = nil
@@ -98,12 +99,14 @@ func (srw *smartRespWriter) Close() error {
 		srw.Header().Del("Content-Encoding")
 		srw.Header().Set("Content-Length", "0")
 		srw.ResponseWriter.WriteHeader(srw.status)
+		return nil
 	}
 	if srw.wantGz {
 		srw.wantGz = false
 		srw.Header().Del("Content-Encoding")
 		srw.Header().Set("Content-Length", "0")
 		srw.ResponseWriter.WriteHeader(srw.status)
+		return nil
 	}
 	return nil
 }

@@ -1,16 +1,12 @@
 package gotor
 
 import (
-	"bytes"
-	"compress/gzip"
 	"context"
 	"crypto/tls"
 	"net"
 	"net/http"
 	"net/http/cgi"
 	"net/http/fcgi"
-	"strconv"
-	"strings"
 	"sync"
 
 	"github.com/caddyserver/certmagic"
@@ -89,46 +85,17 @@ func ServeHTTPS(lnr net.Listener, email string, domainHandlers HostRouter) error
 	return http.Serve(tls.NewListener(lnr, tlsConfig), SmartHandler(domainHandlers))
 }
 
-var http2HTTPSCode = []byte(`<html><head><script type="text/javascript">location.protocol='https:'</script></head><body></body></html>`)
-
-var http2HTTPSCodeLenStr = strconv.Itoa(len(http2HTTPSCode))
-
-func getGzipHTTP2HTTPSCode() []byte {
-	b := bytes.NewBuffer([]byte{})
-	z := gzip.NewWriter(b)
-	z.Write(http2HTTPSCode)
-	z.Close()
-	return b.Bytes()
-}
-
-var gzipHTTP2HTTPSCode = getGzipHTTP2HTTPSCode()
-
-var gzipHTTP2HTTPSCodeLenStr = strconv.Itoa(len(gzipHTTP2HTTPSCode))
-
 func HTTPSWithHTTP(addr string, email string, domainHandlers HostRouter) error {
 	domains := getDomains(domainHandlers)
 	host, port, err := net.SplitHostPort(addr)
 	if err == nil && port == "443" {
-		var h80 http.HandlerFunc
-		if len(domains) == 1 {
-			h80 = RedirectionSite("https://"+domains[0], http.StatusTemporaryRedirect)
-		} else {
-			h80 = func(w http.ResponseWriter, r *http.Request) {
-				w.Header().Set("Content-Type", "text/html; charset=UTF-8")
-				w.Header().Set("Cache-Control", "no-cache")
-				if strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
-					w.Header().Set("Content-Encoding", "gzip")
-					w.Header().Set("Content-Length", gzipHTTP2HTTPSCodeLenStr)
-					w.WriteHeader(http.StatusOK)
-					w.Write(gzipHTTP2HTTPSCode)
-					return
-				}
-				w.Header().Set("Content-Length", http2HTTPSCodeLenStr)
-				w.WriteHeader(http.StatusOK)
-				w.Write(http2HTTPSCode)
+		go http.ListenAndServe(net.JoinHostPort(host, "80"), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			host, _, err := net.SplitHostPort(r.Host)
+			if err != nil {
+				host = r.Host
 			}
-		}
-		go http.ListenAndServe(net.JoinHostPort(host, "80"), h80)
+			Redirect(w, "https://"+host+r.RequestURI, http.StatusPermanentRedirect)
+		}))
 	}
 	lnr, err := listenTLS(addr, email, domains)
 	if err != nil {

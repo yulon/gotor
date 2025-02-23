@@ -54,7 +54,7 @@ type HostRouter map[string]http.Handler
 func (m HostRouter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	host, _, err := net.SplitHostPort(r.Host)
 	if err != nil {
-		return
+		host = r.Host
 	}
 	matchRoute(w, r, m, host)
 }
