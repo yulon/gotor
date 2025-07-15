@@ -301,7 +301,7 @@ func (pxy *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		b := make([]byte, 4096)
+		b := make([]byte, 32*1024)
 
 		for cltBuf.Reader.Buffered() > 0 {
 			n, err := cltBuf.Reader.Read(b)

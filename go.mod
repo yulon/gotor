@@ -5,8 +5,8 @@ go 1.23.3
 require (
 	github.com/andybalholm/brotli v1.1.1
 	github.com/caddyserver/certmagic v0.21.7
-	github.com/yulon/go-netil v1.0.1
-	github.com/yulon/gocks5 v1.0.0
+	github.com/yulon/go-netil v1.0.6
+	github.com/yulon/gocks5 v1.0.8
 )
 
 require (
