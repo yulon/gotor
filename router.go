@@ -18,9 +18,7 @@ func (m PathRouter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path[i] == '/' {
 			h, ok = m[r.URL.Path[:i+1]+"*"]
 			if ok {
-				q := r.URL.Query()
-				q.Set("*", r.URL.Path[i+1:])
-				r.URL.RawQuery = q.Encode()
+				r.URL.Fragment = r.URL.Path[i+1:]
 				h.ServeHTTP(w, r)
 				return
 			}
