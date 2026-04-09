@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/http/cgi"
 	"net/http/fcgi"
-	"sync"
 
 	"github.com/caddyserver/certmagic"
 )
@@ -30,17 +29,22 @@ func ServeHTTP(lnr net.Listener, h http.Handler) error {
 	return http.Serve(lnr, SmartHandler(h))
 }
 
-var changeDefaultACMEMtx sync.Mutex
-
-func newTLSConfig(email string, domains []string) (*tls.Config, error) {
-	changeDefaultACMEMtx.Lock()
-
-	certmagic.DefaultACME.Agreed = true
-	certmagic.DefaultACME.Email = email
-
+func NewTLSConfig(email string, domains []string, dnsProvider certmagic.DNSProvider) (*tls.Config, error) {
 	cfg := certmagic.NewDefault()
 
-	changeDefaultACMEMtx.Unlock()
+	isr := certmagic.NewACMEIssuer(cfg, certmagic.DefaultACME)
+	isr.Agreed = true
+	isr.Email = email
+	isr.Profile = "shortlived"
+	if dnsProvider != nil {
+		isr.DNS01Solver = &certmagic.DNS01Solver{
+			DNSManager: certmagic.DNSManager{
+				DNSProvider: dnsProvider,
+			},
+		}
+	}
+
+	cfg.Issuers = append(cfg.Issuers, isr)
 
 	err := cfg.ManageSync(context.Background(), domains)
 	if err != nil {
@@ -53,8 +57,8 @@ func newTLSConfig(email string, domains []string) (*tls.Config, error) {
 	return tlsConfig, nil
 }
 
-func listenTLS(addr string, email string, domains []string) (net.Listener, error) {
-	tlsConfig, err := newTLSConfig(email, domains)
+func listenTLS(addr string, email string, domains []string, dnsProvider certmagic.DNSProvider) (net.Listener, error) {
+	tlsConfig, err := NewTLSConfig(email, domains, dnsProvider)
 	if err != nil {
 		return nil, err
 	}
@@ -69,23 +73,23 @@ func getDomains(domainHandlers HostRouter) []string {
 	return domains
 }
 
-func HTTPS(addr string, email string, domainHandlers HostRouter) error {
-	lnr, err := listenTLS(addr, email, getDomains(domainHandlers))
+func HTTPS(addr string, email string, dnsProvider certmagic.DNSProvider, domainHandlers HostRouter) error {
+	lnr, err := listenTLS(addr, email, getDomains(domainHandlers), dnsProvider)
 	if err != nil {
 		return err
 	}
 	return http.Serve(lnr, SmartHandler(domainHandlers))
 }
 
-func ServeHTTPS(lnr net.Listener, email string, domainHandlers HostRouter) error {
-	tlsConfig, err := newTLSConfig(email, getDomains(domainHandlers))
+func ServeHTTPS(lnr net.Listener, email string, dnsProvider certmagic.DNSProvider, domainHandlers HostRouter) error {
+	tlsConfig, err := NewTLSConfig(email, getDomains(domainHandlers), dnsProvider)
 	if err != nil {
 		return err
 	}
 	return http.Serve(tls.NewListener(lnr, tlsConfig), SmartHandler(domainHandlers))
 }
 
-func HTTPSWithHTTP(addr string, email string, domainHandlers HostRouter) error {
+func HTTPSWithHTTP(addr string, email string, dnsProvider certmagic.DNSProvider, domainHandlers HostRouter) error {
 	domains := getDomains(domainHandlers)
 	host, port, err := net.SplitHostPort(addr)
 	if err == nil && port == "443" {
@@ -97,7 +101,7 @@ func HTTPSWithHTTP(addr string, email string, domainHandlers HostRouter) error {
 			Redirect(w, "https://"+host+r.RequestURI, http.StatusPermanentRedirect)
 		}))
 	}
-	lnr, err := listenTLS(addr, email, domains)
+	lnr, err := listenTLS(addr, email, domains, dnsProvider)
 	if err != nil {
 		return err
 	}
